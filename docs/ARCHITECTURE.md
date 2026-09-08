@@ -106,7 +106,7 @@ transerver-router/
 
 `NodeStatus` 是与具体传输和存储实现无关的只读快照，包含连接状态、最近成功或失败时间、失败原因、outbox、inbox、待发回执、死信和处理中数量。Distant Stock 的远仓监视器通过此快照读取网络健康度，不直接依赖 HTTP 或文件目录。
 
-来源节点还持久化最终发送结果。`completedSends()` 在进程重启后仍返回原频道、目标、关联 ID、原始载荷和 `APPLIED/REJECTED` 状态；上层完成退包、记账或其它后续动作后再式确认删除。进程内的 `SendHandle` 只是低延迟通知，不是唯一事实来源。
+来源节点还持久化最终发送结果。`completedSends()` 在进程重启后仍返回原频道、目标、关联 ID、原始载荷和 `APPLIED/REJECTED` 状态；上层完成退包、记账或其它后续动作后再显式确认删除。进程内的 `SendHandle` 只是低延迟通知，不是唯一事实来源。
 
 ## 7. 认证
 

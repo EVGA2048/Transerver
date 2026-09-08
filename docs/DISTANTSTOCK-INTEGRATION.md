@@ -81,4 +81,16 @@ The initial UI should expose:
 - discovered node aliases, IDs and online state;
 - an advanced route override table supplied by `RouteResolver` implementations.
 
-The UI edits not store an address inside an item when a route is selected. It writes only the destination identity component.
+The UI does not store an address inside an item when a route is selected. It writes only the destination identity component.
+
+### Configuration UI flow
+
+The configuration screen is split into three areas so that routine address changes are safe and visible:
+
+1. **This server** — alias, read-only full `nodeId`, short fingerprint and a copy button. The identity is generated on first startup and cannot be edited inline. A separate “regenerate identity” action must require confirmation because it intentionally makes already-created packages point at a different server.
+2. **Connection** — Router/transport profile, current endpoint, authentication status, last successful handshake and a “test connection” button. Editing an endpoint changes only the resolver configuration; it never rewrites package data.
+3. **Known servers** — one row per discovered node: alias, short fingerprint, online/offline state, last seen, round-trip time and queued message count. The row can open diagnostics, but changing the alias does not change the node identity.
+
+The first implementation should persist the local alias, node identity, selected transport profile and endpoint in the server configuration file. Discovery and health data are runtime state and should be refreshed from Transerver rather than copied into packages. A future `RouteResolver` may provide multiple endpoints or failover routes without changing this screen's package contract.
+
+When a user selects a remote warehouse, the UI writes only the selected `destinationNodeId` into the order/package route component. It should show the alias and short fingerprint as a human-readable confirmation, while keeping the full UUID available in a tooltip or copy action.
