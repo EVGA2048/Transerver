@@ -43,7 +43,7 @@ Router 是首个 `RouteResolver + Transport` 实现，可以嵌入任意 Minecra
 - `payload`：最多 2 MiB 的二进制载荷；
 - `SHA-256`：编码时写入并在解码时验证。
 
-未知目标必须失败，不能退回任意默认节点。
+未知目标必须返回最终 `REJECTED`，不能退回任意默认节点，也不能永久阻塞同一 outbox 中的其它消息。暂时性网络故障不会产生这个回执，仍按原 `messageId` 重试。
 
 ## 4. 投递状态
 

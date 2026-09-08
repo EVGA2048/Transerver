@@ -46,10 +46,18 @@ public final class HttpTransport implements Transport {
         if (!message.source().equals(nodeId)) {
             throw new IllegalArgumentException("Cannot relay a message owned by another node");
         }
+        if (routes.resolve(message.destination()).isEmpty()) {
+            return DeliveryState.REJECTED;
+        }
         try {
             byte[] body = envelopeCodec.encode(message);
-            request(message.destination(), "POST", "/v1/messages", body);
-            return DeliveryState.RELAYED;
+            String state = new String(request(message.destination(), "POST", "/v1/messages", body),
+                    StandardCharsets.UTF_8);
+            try {
+                return DeliveryState.valueOf(state);
+            } catch (IllegalArgumentException exception) {
+                throw new IOException("Router returned an invalid relay state: " + state, exception);
+            }
         } catch (IOException exception) {
             throw new TranserverException("Unable to encode outgoing message", exception);
         }

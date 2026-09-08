@@ -26,7 +26,9 @@ public final class FileRouterTransport implements Transport {
     @Override
     public synchronized DeliveryState relay(MessageEnvelope message) {
         requireKnownNode(message.source());
-        requireKnownNode(message.destination());
+        if (!nodes.contains(message.destination())) {
+            return DeliveryState.REJECTED;
+        }
         try {
             store.put(relayArea(message.destination()), message.messageId().toString(),
                     envelopeCodec.encode(message));

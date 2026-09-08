@@ -23,8 +23,9 @@ public final class InMemoryRouterTransport implements Transport {
 
     @Override
     public synchronized DeliveryState relay(MessageEnvelope message) {
+        requireKnownNode(message.source());
         if (!nodes.contains(message.destination())) {
-            throw new IllegalArgumentException("Unknown destination: " + message.destination());
+            return DeliveryState.REJECTED;
         }
         var destinationQueue = relay.computeIfAbsent(message.destination(), ignored -> new LinkedHashMap<>());
         MessageEnvelope existing = destinationQueue.putIfAbsent(message.messageId(), message);

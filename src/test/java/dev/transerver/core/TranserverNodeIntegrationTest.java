@@ -15,7 +15,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TranserverNodeIntegrationTest {
@@ -90,10 +89,12 @@ class TranserverNodeIntegrationTest {
     void unknownDestinationNeverFallsBackToAnotherServer() throws Exception {
         var router = router("alpha", "beta");
         var alpha = node("alpha", router);
-        alpha.send("missing", "test:package", bytes("parcel"), SendOptions.defaults());
+        var send = alpha.send("missing", "test:package", bytes("parcel"), SendOptions.defaults());
 
-        assertThrows(IllegalArgumentException.class, alpha::pump);
-        assertEquals(1, alpha.pendingOutboxCount());
+        alpha.pump();
+
+        assertEquals(DeliveryState.REJECTED, send.completion().toCompletableFuture().join().state());
+        assertEquals(0, alpha.pendingOutboxCount());
         assertTrue(router.receive("beta", 10).isEmpty());
     }
 

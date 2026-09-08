@@ -72,8 +72,8 @@ public final class HttpRouterServer implements AutoCloseable {
                 var proof = authenticate(exchange, body);
                 MessageEnvelope message = envelopeCodec.decode(body);
                 requireOwner(proof.nodeId(), message.source());
-                router.relay(message);
-                respond(exchange, 202, new byte[0]);
+                var state = router.relay(message);
+                respond(exchange, 202, bytes(state.name()));
             } else if (method.equals("GET")) {
                 var proof = authenticate(exchange, new byte[0]);
                 Map<String, String> query = query(exchange);

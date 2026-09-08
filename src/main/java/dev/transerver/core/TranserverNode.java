@@ -100,7 +100,18 @@ public final class TranserverNode implements TranserverApi {
 
     private void relayOutbox() throws IOException {
         for (var entry : store.list(OUTBOX, BATCH_SIZE)) {
-            transport.relay(envelopeCodec.decode(entry.value()));
+            MessageEnvelope message = envelopeCodec.decode(entry.value());
+            DeliveryState state = transport.relay(message);
+            if (state == DeliveryState.REJECTED) {
+                store.remove(OUTBOX, entry.key());
+                CompletableFuture<SendReceipt> completion = waiting.remove(message.messageId());
+                if (completion != null) {
+                    completion.complete(new SendReceipt(message.messageId(), DeliveryState.REJECTED,
+                            "Unknown or rejected destination: " + message.destination(), clock.instant()));
+                }
+            } else if (state != DeliveryState.RELAYED) {
+                throw new IOException("Transport returned invalid relay state: " + state);
+            }
         }
     }
 
