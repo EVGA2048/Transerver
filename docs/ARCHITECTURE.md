@@ -26,7 +26,7 @@ Server D ─┤
 Server E ─┘
 ```
 
-Router 是首个 `RouteResolver + Transport` 实现，可以嵌入任意 Minecraft 服务器。它不是仓储服，不保存上层业务状态。每个节点有稳定且唯一的 `serverId`；协议没有 host/client 角色。未来可以增加直连、双 Router 或其它发现方式。
+Router 是首个 `RouteResolver + Transport` 实现，可以嵌入任意 Minecraft 服务器。它不是仓储服，不保存上层业务状态。每个节点有稳定且唯一的 `serverId`；协议没有 host/client 角色。IP、域名、端口和 Router URL 都是可变路由配置，绝不写入消息业务载荷。未来可以增加直连、双 Router 或其它发现方式。
 
 首版支持单播以及由多个单播组成的多播。广播仅用于轻量节点目录和能力信息，不用于复制物品。
 
@@ -106,6 +106,8 @@ transerver-router/
 
 `NodeStatus` 是与具体传输和存储实现无关的只读快照，包含连接状态、最近成功或失败时间、失败原因、outbox、inbox、待发回执、死信和处理中数量。Distant Stock 的远仓监视器通过此快照读取网络健康度，不直接依赖 HTTP 或文件目录。
 
+来源节点还持久化最终发送结果。`completedSends()` 在进程重启后仍返回原频道、目标、关联 ID、原始载荷和 `APPLIED/REJECTED` 状态；上层完成退包、记账或其它后续动作后再式确认删除。进程内的 `SendHandle` 只是低延迟通知，不是唯一事实来源。
+
 ## 7. 认证
 
 节点共享一个网络密钥。请求使用 HMAC-SHA256，覆盖方法、路径、节点 ID、时间戳、nonce 和正文摘要。Router 拒绝超时请求与当前进程内重复 nonce。
@@ -139,3 +141,5 @@ distantstock:stock.snapshot
 同一仓储频率可以存在于多个服务器。Distant Stock 根据库存和状态选择来源服务器，并可将一个订单拆成多个带相同 `correlationId` 的子订单。Create 地址只负责目标服务器内部选择远仓港。
 
 迁移顺序：可靠包裹、订单与回程、库存目录、监视器指标。
+
+服务器身份、包裹组件、地址变更和应用确认的详细约定见 [DISTANTSTOCK-INTEGRATION.md](DISTANTSTOCK-INTEGRATION.md)。核心规则是：包裹只保存稳定 `nodeId`，IP、域名、端口及 Router 地址只能由发送时的 `RouteResolver` 解析。

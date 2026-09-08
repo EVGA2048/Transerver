@@ -12,6 +12,7 @@ public record NodeStatus(
         int outboxDepth,
         int inboxDepth,
         int outgoingReceiptDepth,
+        int completedSendDepth,
         int deadLetterDepth,
         int handlersInFlight
 ) {

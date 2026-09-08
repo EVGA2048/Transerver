@@ -52,6 +52,10 @@ class TranserverNodeIntegrationTest {
         assertEquals(0, alpha.pendingOutboxCount());
         assertEquals(DeliveryState.APPLIED, betaSend.completion().toCompletableFuture().join().state());
         assertEquals(DeliveryState.APPLIED, gammaSend.completion().toCompletableFuture().join().state());
+        assertEquals(2, alpha.status().completedSendDepth());
+        alpha.acknowledgeCompletedSend(betaSend.messageId());
+        alpha.acknowledgeCompletedSend(gammaSend.messageId());
+        assertEquals(0, alpha.status().completedSendDepth());
     }
 
     @Test
@@ -86,6 +90,30 @@ class TranserverNodeIntegrationTest {
     }
 
     @Test
+    void completedSendCanBeConsumedAfterSenderRestart() throws Exception {
+        var router = router("alpha", "beta");
+        var alpha = node("alpha", router);
+        var beta = node("beta", router);
+        beta.registerHandler("test:package",
+                message -> CompletableFuture.completedFuture(DeliveryResult.APPLIED));
+        var send = alpha.send("beta", "test:package", bytes("recoverable"), SendOptions.defaults());
+
+        alpha.pump();
+        beta.pump();
+
+        var restartedAlpha = node("alpha", router);
+        restartedAlpha.pump();
+
+        assertEquals(0, restartedAlpha.pendingOutboxCount());
+        var result = restartedAlpha.completedSends(10).getFirst();
+        assertEquals(send.messageId(), result.messageId());
+        assertEquals(DeliveryState.APPLIED, result.state());
+        assertEquals("recoverable", text(result.payload()));
+        restartedAlpha.acknowledgeCompletedSend(result.messageId());
+        assertTrue(restartedAlpha.completedSends(10).isEmpty());
+    }
+
+    @Test
     void unknownDestinationNeverFallsBackToAnotherServer() throws Exception {
         var router = router("alpha", "beta");
         var alpha = node("alpha", router);
@@ -95,7 +123,34 @@ class TranserverNodeIntegrationTest {
 
         assertEquals(DeliveryState.REJECTED, send.completion().toCompletableFuture().join().state());
         assertEquals(0, alpha.pendingOutboxCount());
+        assertEquals(DeliveryState.REJECTED, alpha.completedSends(10).getFirst().state());
+        assertEquals("parcel", text(alpha.completedSends(10).getFirst().payload()));
         assertTrue(router.receive("beta", 10).isEmpty());
+    }
+
+    @Test
+    void sourceRecoversFinalResultAfterRestart() throws Exception {
+        var router = router("alpha", "beta");
+        var alpha = node("alpha", router);
+        var beta = node("beta", router);
+        beta.registerHandler("test:package",
+                message -> CompletableFuture.completedFuture(DeliveryResult.APPLIED));
+        var send = alpha.send("beta", "test:package", bytes("recoverable"), SendOptions.defaults());
+
+        alpha.pump();
+        beta.pump();
+
+        var restartedAlpha = node("alpha", router);
+        restartedAlpha.pump();
+
+        assertEquals(0, restartedAlpha.pendingOutboxCount());
+        assertEquals(1, restartedAlpha.completedSends(10).size());
+        var result = restartedAlpha.completedSends(10).getFirst();
+        assertEquals(send.messageId(), result.messageId());
+        assertEquals(DeliveryState.APPLIED, result.state());
+        assertEquals("recoverable", text(result.payload()));
+        restartedAlpha.acknowledgeCompletedSend(result.messageId());
+        assertTrue(restartedAlpha.completedSends(10).isEmpty());
     }
 
     private InMemoryRouterTransport router(String... nodeIds) {

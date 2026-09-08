@@ -2,6 +2,7 @@ package dev.transerver.core;
 
 import dev.transerver.api.DeliveryResult;
 import dev.transerver.api.DeliveryState;
+import dev.transerver.api.CompletedSend;
 import dev.transerver.api.MessageHandler;
 import dev.transerver.api.NodeStatus;
 import dev.transerver.api.ReceivedMessage;
@@ -25,6 +26,7 @@ public final class TranserverNode implements TranserverApi {
     private static final String INBOX = "inbox";
     private static final String OUTGOING_RECEIPTS = "outgoing-receipts";
     private static final String COMPLETED = "completed";
+    private static final String SEND_RESULTS = "send-results";
     private static final String DEAD_LETTER = "dead-letter";
     private static final Pattern IDENTIFIER = Pattern.compile("[a-z0-9][a-z0-9._:-]{0,127}");
     private static final int BATCH_SIZE = 128;
@@ -35,6 +37,7 @@ public final class TranserverNode implements TranserverApi {
     private final Clock clock;
     private final EnvelopeCodec envelopeCodec = new EnvelopeCodec();
     private final ReceiptCodec receiptCodec = new ReceiptCodec();
+    private final CompletedSendCodec completedSendCodec = new CompletedSendCodec();
     private final Map<String, MessageHandler> handlers = new ConcurrentHashMap<>();
     private final Map<UUID, CompletableFuture<SendReceipt>> waiting = new ConcurrentHashMap<>();
     private final Set<UUID> handling = ConcurrentHashMap.newKeySet();
@@ -85,7 +88,33 @@ public final class TranserverNode implements TranserverApi {
     @Override
     public NodeStatus status() {
         return new NodeStatus(nodeId, transportUp, lastSuccessfulPump, lastFailedPump, lastFailure,
-                depth(OUTBOX), depth(INBOX), depth(OUTGOING_RECEIPTS), depth(DEAD_LETTER), handling.size());
+                depth(OUTBOX), depth(INBOX), depth(OUTGOING_RECEIPTS), depth(SEND_RESULTS),
+                depth(DEAD_LETTER), handling.size());
+    }
+
+    @Override
+    public java.util.List<CompletedSend> completedSends(int limit) {
+        if (limit < 0) {
+            throw new IllegalArgumentException("limit must not be negative");
+        }
+        try {
+            var results = new java.util.ArrayList<CompletedSend>();
+            for (var entry : store.list(SEND_RESULTS, limit)) {
+                results.add(completedSendCodec.decode(entry.value()));
+            }
+            return java.util.List.copyOf(results);
+        } catch (IOException exception) {
+            throw new TranserverException("Unable to read completed sends", exception);
+        }
+    }
+
+    @Override
+    public void acknowledgeCompletedSend(UUID messageId) {
+        try {
+            store.remove(SEND_RESULTS, messageId.toString());
+        } catch (IOException exception) {
+            throw new TranserverException("Unable to acknowledge completed send", exception);
+        }
     }
 
     /** Performs one batch while allowing independent stages to progress after another stage fails. */
@@ -126,12 +155,12 @@ public final class TranserverNode implements TranserverApi {
             MessageEnvelope message = envelopeCodec.decode(entry.value());
             DeliveryState state = transport.relay(message);
             if (state == DeliveryState.REJECTED) {
+                var receipt = new FinalReceipt(message.messageId(), message.source(), message.destination(),
+                        DeliveryState.REJECTED, "Unknown or rejected destination: " + message.destination(),
+                        clock.instant());
+                persistCompletedSend(message, receipt);
                 store.remove(OUTBOX, entry.key());
-                CompletableFuture<SendReceipt> completion = waiting.remove(message.messageId());
-                if (completion != null) {
-                    completion.complete(new SendReceipt(message.messageId(), DeliveryState.REJECTED,
-                            "Unknown or rejected destination: " + message.destination(), clock.instant()));
-                }
+                completeHandle(receipt);
             } else if (state != DeliveryState.RELAYED) {
                 throw new IOException("Transport returned invalid relay state: " + state);
             }
@@ -219,13 +248,28 @@ public final class TranserverNode implements TranserverApi {
                 throw new IOException("Transport delivered a receipt for another node");
             }
             String key = receipt.messageId().toString();
-            store.remove(OUTBOX, key);
-            CompletableFuture<SendReceipt> completion = waiting.remove(receipt.messageId());
-            if (completion != null) {
-                completion.complete(new SendReceipt(receipt.messageId(), receipt.state(),
-                        receipt.detail(), receipt.completedAt()));
+            var outgoing = store.get(OUTBOX, key);
+            if (outgoing.isPresent()) {
+                MessageEnvelope message = envelopeCodec.decode(outgoing.get());
+                persistCompletedSend(message, receipt);
+                store.remove(OUTBOX, key);
+                completeHandle(receipt);
+            } else if (store.get(SEND_RESULTS, key).isEmpty()) {
+                throw new IOException("Receipt has no matching outgoing message: " + receipt.messageId());
             }
             transport.acknowledgeReceipt(nodeId, receipt.messageId());
+        }
+    }
+
+    private void persistCompletedSend(MessageEnvelope message, FinalReceipt receipt) throws IOException {
+        store.put(SEND_RESULTS, message.messageId().toString(), completedSendCodec.encode(message, receipt));
+    }
+
+    private void completeHandle(FinalReceipt receipt) {
+        CompletableFuture<SendReceipt> completion = waiting.remove(receipt.messageId());
+        if (completion != null) {
+            completion.complete(new SendReceipt(receipt.messageId(), receipt.state(),
+                    receipt.detail(), receipt.completedAt()));
         }
     }
 
