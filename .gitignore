@@ -4,6 +4,7 @@ out/
 *.iml
 .idea/
 .DS_Store
+run/
 transerver-router.properties
 transerver-router-data/
 transerver-probe.properties

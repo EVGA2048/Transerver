@@ -2,9 +2,9 @@
 
 ## Packaging boundary
 
-Transerver remains a plain Java library and a standalone Router application. Distant Stock embeds the compatible Transerver library in its NeoForge mod JAR, so players do not need to install a second empty mod. Server operators may run the Router distribution separately or embed the same core behind another adapter.
+Transerver is published as an independent NeoForge prerequisite mod and also remains a standalone Router application. Distant Stock and Transerver produce separate JARs; Distant Stock declares a compatible Transerver version range instead of embedding the library.
 
-The embedded library uses the stable Java module name `dev.transerver`. Distant Stock depends only on `dev.transerver.api` and its own adapter layer; it must not call HTTP endpoints or file-store internals directly. NeoForge's Jar-in-Jar version range will express compatibility once the first Transerver version is tagged.
+The library uses the stable Java module name `dev.transerver`. Distant Stock depends only on `dev.transerver.api` and its own adapter layer; it must not call HTTP endpoints or file-store internals directly. The first compatible series is expressed as `[0.1.0,0.2.0)` once the first Transerver version is tagged.
 
 ## Stable identity, mutable address
 

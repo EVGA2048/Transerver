@@ -1,0 +1,27 @@
+modLoader="javafml"
+loaderVersion="${loader_version_range}"
+license="MIT"
+
+[[mods]]
+modId="transerver"
+version="${mod_version}"
+displayName="Transerver"
+authors="EVGA2048"
+description='''
+A reliable multi-server transport and persistence library for NeoForge mods.
+Provides stable node identity, authenticated routing, durable delivery and receipts.
+'''
+
+[[dependencies.transerver]]
+modId="neoforge"
+type="required"
+versionRange="[21.1,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.transerver]]
+modId="minecraft"
+type="required"
+versionRange="${minecraft_version_range}"
+ordering="NONE"
+side="BOTH"

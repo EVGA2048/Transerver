@@ -27,7 +27,10 @@
 - 细化配置 UI：本服别名与只读 `nodeId`、可变的 Router/传输地址、连接测试、已发现节点健康表；改地址只更新 `RouteResolver`，不改写包裹。
 - 规定“重新生成身份”必须是单独的迁移操作并明确警告，因为它会让已有包裹指向不同节点；普通改名和改域名均不影响运输中的包裹。
 - 实现可复用的 `NodeIdentity` 与原子身份文件：首次启动生成 UUID，别名可独立修改，并提供稳定的短识别码供配置界面展示。
-- 确定发布边界：Distant Stock 使用 NeoForge Jar-in-Jar 内嵌 Transerver 客户端库，Router 保持可独立部署；为库固定 Java 模块名 `dev.transerver`。
+- 固定 Java 模块名 `dev.transerver`，避免作为前置库加载时与其它模块冲突。
+- 根据公开发布目标修正发布边界：Transerver 与 Distant Stock 是两个独立 NeoForge JAR，Distant Stock 通过版本范围声明前置依赖，不内嵌 Transerver。
+- 完成 NeoForge 1.21.1 模组入口、服务端配置和生命周期接入；默认安全停用，配置 Router 与密钥后才启动持久节点运行时。
+- 产出双用途 Transerver JAR：既可放入 `mods` 作为前置模组，也保留 `java -jar` 外置 Router 入口。
 
 ### 从现有实现发现的问题
 
