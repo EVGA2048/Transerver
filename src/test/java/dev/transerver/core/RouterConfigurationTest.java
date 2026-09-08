@@ -42,4 +42,23 @@ class RouterConfigurationTest {
 
         assertThrows(IllegalArgumentException.class, () -> RouterConfiguration.load(file));
     }
+
+    @Test
+    void loadsProbeConfiguration() throws Exception {
+        Path file = temporaryDirectory.resolve("probe.properties");
+        Files.writeString(file, """
+                nodeId=alpha
+                routerUrl=http://127.0.0.1:8765
+                dataDirectory=alpha-state
+                networkSecret=0123456789abcdef0123456789abcdef
+                pollMillis=250
+                """);
+
+        ProbeConfiguration configuration = ProbeConfiguration.load(file);
+
+        assertEquals("alpha", configuration.nodeId());
+        assertEquals("http://127.0.0.1:8765", configuration.routerUri().toString());
+        assertEquals(250, configuration.pollInterval().toMillis());
+        assertEquals(temporaryDirectory.resolve("alpha-state"), configuration.dataDirectory());
+    }
 }

@@ -38,3 +38,7 @@ Transerver 是面向 Minecraft 多服务器网络的可靠消息前置库。它�
 ```
 
 正式跨公网使用时应在 Router 前配置 TLS 反向代理或受控隧道。HMAC 用来验证服务器身份，不负责加密网络内容。
+
+## 多节点手工测试
+
+发行包内置交互式 probe 节点，可在接入 Minecraft 前用三台机器验证路由、断线积压、重启恢复和最终回执。步骤见 [docs/TESTING.md](docs/TESTING.md)。

@@ -1,6 +1,7 @@
 package dev.transerver.core;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 
 public final class TranserverRouterMain {
@@ -8,8 +9,12 @@ public final class TranserverRouterMain {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && args[0].equals("probe")) {
+            TranserverProbeMain.run(Arrays.copyOfRange(args, 1, args.length));
+            return;
+        }
         if (args.length > 1) {
-            System.err.println("Usage: transerver [configuration.properties]");
+            System.err.println("Usage: transerver [router.properties] | probe [probe.properties]");
             System.exit(2);
         }
         Path configurationFile = Path.of(args.length == 1 ? args[0] : "transerver-router.properties");

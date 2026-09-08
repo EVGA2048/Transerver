@@ -6,3 +6,5 @@ out/
 .DS_Store
 transerver-router.properties
 transerver-router-data/
+transerver-probe.properties
+transerver-probe-data/
