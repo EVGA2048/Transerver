@@ -3,6 +3,7 @@ package dev.transerver.core;
 import dev.transerver.api.DeliveryResult;
 import dev.transerver.api.DeliveryState;
 import dev.transerver.api.MessageHandler;
+import dev.transerver.api.NodeStatus;
 import dev.transerver.api.ReceivedMessage;
 import dev.transerver.api.SendHandle;
 import dev.transerver.api.SendOptions;
@@ -37,6 +38,10 @@ public final class TranserverNode implements TranserverApi {
     private final Map<String, MessageHandler> handlers = new ConcurrentHashMap<>();
     private final Map<UUID, CompletableFuture<SendReceipt>> waiting = new ConcurrentHashMap<>();
     private final Set<UUID> handling = ConcurrentHashMap.newKeySet();
+    private volatile boolean transportUp;
+    private volatile Instant lastSuccessfulPump;
+    private volatile Instant lastFailedPump;
+    private volatile String lastFailure = "";
 
     public TranserverNode(String nodeId, Transport transport, MessageStore store) {
         this(nodeId, transport, store, Clock.systemUTC());
@@ -77,25 +82,43 @@ public final class TranserverNode implements TranserverApi {
         }
     }
 
-    /** Performs one non-blocking batch of relay, receive, dispatch and receipt work. */
+    @Override
+    public NodeStatus status() {
+        return new NodeStatus(nodeId, transportUp, lastSuccessfulPump, lastFailedPump, lastFailure,
+                depth(OUTBOX), depth(INBOX), depth(OUTGOING_RECEIPTS), depth(DEAD_LETTER), handling.size());
+    }
+
+    /** Performs one batch while allowing independent stages to progress after another stage fails. */
     public void pump() {
+        RuntimeException failure = null;
+        failure = runStage(this::relayOutbox, failure);
+        failure = runStage(this::receiveMessages, failure);
+        failure = runStage(this::processInbox, failure);
+        failure = runStage(this::flushReceipts, failure);
+        failure = runStage(this::receiveFinalReceipts, failure);
+        if (failure == null) {
+            transportUp = true;
+            lastSuccessfulPump = clock.instant();
+            lastFailure = "";
+            return;
+        }
+        transportUp = false;
+        lastFailedPump = clock.instant();
+        lastFailure = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
+        throw failure;
+    }
+
+    public boolean pumpSafely() {
         try {
-            relayOutbox();
-            receiveMessages();
-            processInbox();
-            flushReceipts();
-            receiveFinalReceipts();
-        } catch (IOException exception) {
-            throw new TranserverException("Transerver pump failed", exception);
+            pump();
+            return true;
+        } catch (RuntimeException exception) {
+            return false;
         }
     }
 
     public int pendingOutboxCount() {
-        try {
-            return store.list(OUTBOX, Integer.MAX_VALUE).size();
-        } catch (IOException exception) {
-            throw new TranserverException("Unable to inspect outbox", exception);
-        }
+        return depth(OUTBOX);
     }
 
     private void relayOutbox() throws IOException {
@@ -206,9 +229,33 @@ public final class TranserverNode implements TranserverApi {
         }
     }
 
+    private int depth(String area) {
+        try {
+            return store.list(area, Integer.MAX_VALUE).size();
+        } catch (IOException exception) {
+            throw new TranserverException("Unable to inspect " + area, exception);
+        }
+    }
+
+    private RuntimeException runStage(PumpStage stage, RuntimeException previous) {
+        try {
+            stage.run();
+            return previous;
+        } catch (IOException exception) {
+            return previous == null ? new TranserverException("Transerver pump failed", exception) : previous;
+        } catch (RuntimeException exception) {
+            return previous == null ? exception : previous;
+        }
+    }
+
     private static void requireIdentifier(String value, String label) {
         if (value == null || !IDENTIFIER.matcher(value).matches()) {
             throw new IllegalArgumentException("Invalid " + label + ": " + value);
         }
+    }
+
+    @FunctionalInterface
+    private interface PumpStage {
+        void run() throws IOException;
     }
 }
