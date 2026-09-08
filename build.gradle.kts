@@ -30,6 +30,12 @@ tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
 }
 
+tasks.jar {
+    manifest {
+        attributes["Automatic-Module-Name"] = "dev.transerver"
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
 }

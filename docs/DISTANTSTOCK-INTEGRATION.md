@@ -1,5 +1,11 @@
 # Distant Stock integration contract
 
+## Packaging boundary
+
+Transerver remains a plain Java library and a standalone Router application. Distant Stock embeds the compatible Transerver library in its NeoForge mod JAR, so players do not need to install a second empty mod. Server operators may run the Router distribution separately or embed the same core behind another adapter.
+
+The embedded library uses the stable Java module name `dev.transerver`. Distant Stock depends only on `dev.transerver.api` and its own adapter layer; it must not call HTTP endpoints or file-store internals directly. NeoForge's Jar-in-Jar version range will express compatibility once the first Transerver version is tagged.
+
 ## Stable identity, mutable address
 
 A physical address is never package data. IP addresses, domains, ports, Router URLs and transport names belong only to configuration and may change at any time.
