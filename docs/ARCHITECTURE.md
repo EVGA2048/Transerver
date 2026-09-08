@@ -108,6 +108,19 @@ transerver-router/
 
 认证不替代传输加密。公网部署应使用 TLS 反向代理或受控隧道。
 
+默认 HTTP 适配器使用以下端点：
+
+```text
+POST   /v1/messages                 提交一条消息
+GET    /v1/messages?node=...        拉取目标节点的消息
+POST   /v1/receipts                 提交最终回执
+GET    /v1/receipts?node=...        拉取来源节点的最终回执
+DELETE /v1/receipts?node=...&id=... 确认来源节点已收到回执
+GET    /v1/hello                    健康与协议版本检查
+```
+
+所有操作端点都验证发起节点是否拥有对应的消息或队列。批次和请求正文均有固定上限；HTTP 只实现 `Transport`，业务 API 不依赖这些路径。
+
 ## 8. Distant Stock 接入
 
 Distant Stock 使用独立频道：

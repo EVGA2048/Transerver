@@ -1,6 +1,11 @@
 plugins {
     `java-library`
     `maven-publish`
+    application
+}
+
+application {
+    mainClass = "dev.transerver.core.TranserverRouterMain"
 }
 
 group = "dev.transerver"

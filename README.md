@@ -16,7 +16,7 @@ Transerver 是面向 Minecraft 多服务器网络的可靠消息前置库。它�
 
 ## 当前阶段
 
-`0.1.0-SNAPSHOT` 已完成协议核心、文件信箱、可持久化 Router 和节点投递循环。三个节点互发、目标离线、接收端重启去重、未知目标拒绝及 Router 重启恢复已有自动测试。下一阶段是 HTTP 传输适配器和 Minecraft 运行时适配层。
+`0.1.0-SNAPSHOT` 已完成协议核心、文件信箱、可持久化 Router、HTTP 传输和节点投递循环。三个节点互发、目标离线、接收端重启去重、未知目标拒绝及 Router 重启恢复已有自动测试。下一阶段是 Minecraft 运行时适配层。
 
 设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，开发记录见 [DEVLOG.md](DEVLOG.md)。
 
@@ -28,3 +28,13 @@ Transerver 是面向 Minecraft 多服务器网络的可靠消息前置库。它�
 ```
 
 需要 JDK 21。
+
+## 启动 Router
+
+复制 `transerver-router.example.properties` 为 `transerver-router.properties`，填写所有服务器的稳定 ID，并将示例密钥替换为至少 32 字节的随机密钥。然后运行：
+
+```bash
+./gradlew run
+```
+
+正式跨公网使用时应在 Router 前配置 TLS 反向代理或受控隧道。HMAC 用来验证服务器身份，不负责加密网络内容。

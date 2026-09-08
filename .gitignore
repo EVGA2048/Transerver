@@ -4,4 +4,5 @@ out/
 *.iml
 .idea/
 .DS_Store
-
+transerver-router.properties
+transerver-router-data/
