@@ -18,7 +18,7 @@ Transerver 是面向 Minecraft 多服务器网络的可靠消息前置库。它�
 
 `0.1.0-SNAPSHOT` 已完成协议核心、文件信箱、可持久化 Router、HTTP 传输、自动重试运行时和节点状态快照。三个节点互发、目标离线、接收端重启去重、未知目标拒绝及 Router 重启恢复已有自动测试。下一阶段是 Minecraft 运行时适配层。
 
-总体设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，远仓接入约定见 [docs/DISTANTSTOCK-INTEGRATION.md](docs/DISTANTSTOCK-INTEGRATION.md)，开发记录见 [DEVLOG.md](DEVLOG.md)。
+总体设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，远仓接入约定见 [docs/DISTANTSTOCK-INTEGRATION.md](docs/DISTANTSTOCK-INTEGRATION.md)，兼容策略见 [docs/VERSIONING.md](docs/VERSIONING.md)，开发记录见 [DEVLOG.md](DEVLOG.md)。
 
 ## 构建
 

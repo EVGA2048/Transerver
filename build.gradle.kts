@@ -9,7 +9,7 @@ application {
 }
 
 group = "dev.transerver"
-version = "0.1.0-SNAPSHOT"
+version = providers.gradleProperty("releaseVersion").orElse("0.1.0-SNAPSHOT").get()
 
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(21)
