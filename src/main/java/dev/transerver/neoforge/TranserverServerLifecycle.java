@@ -55,7 +55,7 @@ public final class TranserverServerLifecycle {
                     new FileMessageStore(root.resolve("messages")));
             var nodeRuntime = new TranserverRuntime(node,
                     Duration.ofMillis(TranserverNeoForgeConfig.POLL_MILLIS.get()));
-            TranserverServices.install(node);
+            TranserverServices.install(node, identity);
             api = node;
             runtime = nodeRuntime;
             nodeRuntime.start();

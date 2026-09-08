@@ -31,6 +31,7 @@
 - 根据公开发布目标修正发布边界：Transerver 与 Distant Stock 是两个独立 NeoForge JAR，Distant Stock 通过版本范围声明前置依赖，不内嵌 Transerver。
 - 完成 NeoForge 1.21.1 模组入口、服务端配置和生命周期接入；默认安全停用，配置 Router 与密钥后才启动持久节点运行时。
 - 产出双用途 Transerver JAR：既可放入 `mods` 作为前置模组，也保留 `java -jar` 外置 Router 入口。
+- 增加管理员身份与状态命令，直接显示稳定 UUID、短识别码、Router 连通状态、持久队列积压和最近错误。
 
 ### 从现有实现发现的问题
 

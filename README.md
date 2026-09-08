@@ -50,6 +50,11 @@ pollMillis = 500
 
 稳定 UUID 保存在服务器根目录的 `transerver/node-identity.properties`。它应随服务器一起备份；修改别名、Router IP 或域名都不会改变该 UUID。默认 `enabled = false`，未完成配置时不会启动网络运行时。
 
+管理员命令：
+
+- `/transerver identity`：显示服务器别名、短识别码和完整 UUID；
+- `/transerver status`：显示 Router 连通状态、各持久队列深度和最近错误。
+
 ## 启动 Router
 
 复制 `transerver-router.example.properties` 为 `transerver-router.properties`，填写所有服务器的稳定 ID，并将示例密钥替换为至少 32 字节的随机密钥。然后运行：

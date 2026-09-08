@@ -12,6 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TranserverServicesTest {
     private TranserverApi installed;
+    private final NodeIdentity identity = new NodeIdentity(
+            UUID.fromString("123e4567-e89b-12d3-a456-426614174000"), "test");
 
     @AfterEach
     void clearService() {
@@ -24,22 +26,24 @@ class TranserverServicesTest {
     void exposesOneRuntimeAndClearsOnlyItsOwner() {
         installed = new StubApi();
 
-        TranserverServices.install(installed);
+        TranserverServices.install(installed, identity);
 
         assertEquals(installed, TranserverServices.api().orElseThrow());
+        assertEquals(identity, TranserverServices.identity().orElseThrow());
         TranserverServices.clear(new StubApi());
         assertEquals(installed, TranserverServices.api().orElseThrow());
         TranserverServices.clear(installed);
         assertTrue(TranserverServices.api().isEmpty());
+        assertTrue(TranserverServices.identity().isEmpty());
         installed = null;
     }
 
     @Test
     void refusesToReplaceRunningService() {
         installed = new StubApi();
-        TranserverServices.install(installed);
+        TranserverServices.install(installed, identity);
 
-        assertThrows(IllegalStateException.class, () -> TranserverServices.install(new StubApi()));
+        assertThrows(IllegalStateException.class, () -> TranserverServices.install(new StubApi(), identity));
     }
 
     private static final class StubApi implements TranserverApi {
