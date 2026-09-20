@@ -24,6 +24,12 @@ public final class FileRouterTransport implements Transport {
     }
 
     @Override
+    public synchronized Set<String> knownNodes(String nodeId) {
+        requireKnownNode(nodeId);
+        return nodes;
+    }
+
+    @Override
     public synchronized DeliveryState relay(MessageEnvelope message) {
         requireKnownNode(message.source());
         if (!nodes.contains(message.destination())) {

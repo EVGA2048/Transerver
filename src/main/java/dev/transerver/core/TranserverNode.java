@@ -27,6 +27,10 @@ public final class TranserverNode implements TranserverApi {
     private static final String OUTGOING_RECEIPTS = "outgoing-receipts";
     private static final String COMPLETED = "completed";
     private static final String SEND_RESULTS = "send-results";
+    // Independent of application acknowledgements: delayed receipts must remain idempotent after restart.
+    private static final String SENT_RECEIPTS = "sent-receipts";
+    /** Receipts that cannot safely be attached to current sender state; kept for diagnosis, not retried forever. */
+    private static final String RECEIPT_QUARANTINE = "receipt-quarantine";
     private static final String DEAD_LETTER = "dead-letter";
     private static final Pattern IDENTIFIER = Pattern.compile("[a-z0-9][a-z0-9._:-]{0,127}");
     private static final int BATCH_SIZE = 128;
@@ -86,6 +90,11 @@ public final class TranserverNode implements TranserverApi {
     }
 
     @Override
+    public Set<String> knownNodes() {
+        return transport.knownNodes(nodeId);
+    }
+
+    @Override
     public NodeStatus status() {
         return new NodeStatus(nodeId, transportUp, lastSuccessfulPump, lastFailedPump, lastFailure,
                 depth(OUTBOX), depth(INBOX), depth(OUTGOING_RECEIPTS), depth(SEND_RESULTS),
@@ -111,6 +120,13 @@ public final class TranserverNode implements TranserverApi {
     @Override
     public void acknowledgeCompletedSend(UUID messageId) {
         try {
+            var result = store.get(SEND_RESULTS, messageId.toString());
+            if (result.isPresent()) {
+                var completed = completedSendCodec.decode(result.get());
+                store.put(SENT_RECEIPTS, messageId.toString(), receiptCodec.encode(new FinalReceipt(
+                        completed.messageId(), nodeId, completed.destination(), completed.state(),
+                        completed.detail(), completed.completedAt())));
+            }
             store.remove(SEND_RESULTS, messageId.toString());
         } catch (IOException exception) {
             throw new TranserverException("Unable to acknowledge completed send", exception);
@@ -120,11 +136,11 @@ public final class TranserverNode implements TranserverApi {
     /** Performs one batch while allowing independent stages to progress after another stage fails. */
     public void pump() {
         RuntimeException failure = null;
-        failure = runStage(this::relayOutbox, failure);
-        failure = runStage(this::receiveMessages, failure);
-        failure = runStage(this::processInbox, failure);
-        failure = runStage(this::flushReceipts, failure);
-        failure = runStage(this::receiveFinalReceipts, failure);
+        failure = runStage("relayOutbox", this::relayOutbox, failure);
+        failure = runStage("receiveMessages", this::receiveMessages, failure);
+        failure = runStage("processInbox", this::processInbox, failure);
+        failure = runStage("flushReceipts", this::flushReceipts, failure);
+        failure = runStage("receiveFinalReceipts", this::receiveFinalReceipts, failure);
         if (failure == null) {
             transportUp = true;
             lastSuccessfulPump = clock.instant();
@@ -245,7 +261,9 @@ public final class TranserverNode implements TranserverApi {
     private void receiveFinalReceipts() throws IOException {
         for (FinalReceipt receipt : transport.receiveReceipts(nodeId, BATCH_SIZE)) {
             if (!receipt.source().equals(nodeId)) {
-                throw new IOException("Transport delivered a receipt for another node");
+                quarantineReceipt(receipt, "wrong-source");
+                transport.acknowledgeReceipt(nodeId, receipt.messageId());
+                continue;
             }
             String key = receipt.messageId().toString();
             var outgoing = store.get(OUTBOX, key);
@@ -254,15 +272,49 @@ public final class TranserverNode implements TranserverApi {
                 persistCompletedSend(message, receipt);
                 store.remove(OUTBOX, key);
                 completeHandle(receipt);
-            } else if (store.get(SEND_RESULTS, key).isEmpty()) {
-                throw new IOException("Receipt has no matching outgoing message: " + receipt.messageId());
+            } else {
+                var known = store.get(SENT_RECEIPTS, key);
+                if (known.isEmpty()) {
+                    // Upgrade old stores while their application result is still available.
+                    var result = store.get(SEND_RESULTS, key);
+                    if (result.isEmpty()) {
+                        // Pre-sent-receipts versions deleted SEND_RESULTS as soon as the application
+                        // acknowledged it. A receipt can legitimately be replayed by the durable
+                        // router after that point, especially across restart/upgrade. Keep a copy
+                        // for diagnosis, ACK the poison item, and let the node keep pumping.
+                        quarantineReceipt(receipt, "orphan");
+                        transport.acknowledgeReceipt(nodeId, receipt.messageId());
+                        continue;
+                    }
+                    var completed = completedSendCodec.decode(result.get());
+                    known = java.util.Optional.of(receiptCodec.encode(new FinalReceipt(completed.messageId(),
+                            nodeId, completed.destination(), completed.state(), completed.detail(), completed.completedAt())));
+                }
+                if (!java.util.Arrays.equals(known.get(), receiptCodec.encode(receipt))) {
+                    // Never let a conflicting replay rewrite the result already accepted by the
+                    // application, but do not leave it at the Router forever either.
+                    quarantineReceipt(receipt, "conflict");
+                    transport.acknowledgeReceipt(nodeId, receipt.messageId());
+                    continue;
+                }
+                store.put(SENT_RECEIPTS, key, known.get());
             }
             transport.acknowledgeReceipt(nodeId, receipt.messageId());
         }
     }
 
+    private void quarantineReceipt(FinalReceipt receipt, String reason) throws IOException {
+        String key = receipt.messageId() + "-" + reason + "-" + UUID.randomUUID();
+        store.put(RECEIPT_QUARANTINE, key, receiptCodec.encode(receipt));
+    }
+
     private void persistCompletedSend(MessageEnvelope message, FinalReceipt receipt) throws IOException {
+        if (!message.messageId().equals(receipt.messageId()) || !message.source().equals(receipt.source())
+                || !message.destination().equals(receipt.destination())) {
+            throw new IOException("Final receipt does not match outgoing message");
+        }
         store.put(SEND_RESULTS, message.messageId().toString(), completedSendCodec.encode(message, receipt));
+        store.put(SENT_RECEIPTS, message.messageId().toString(), receiptCodec.encode(receipt));
     }
 
     private void completeHandle(FinalReceipt receipt) {
@@ -281,14 +333,23 @@ public final class TranserverNode implements TranserverApi {
         }
     }
 
-    private RuntimeException runStage(PumpStage stage, RuntimeException previous) {
+    private RuntimeException runStage(String name, PumpStage stage, RuntimeException previous) {
         try {
             stage.run();
             return previous;
-        } catch (IOException exception) {
-            return previous == null ? new TranserverException("Transerver pump failed", exception) : previous;
-        } catch (RuntimeException exception) {
-            return previous == null ? exception : previous;
+        } catch (IOException | RuntimeException exception) {
+            Throwable cause = exception;
+            StringBuilder detail = new StringBuilder();
+            detail.append(cause.getClass().getSimpleName()).append(": ").append(cause.getMessage());
+            for (int depth = 0; cause.getCause() != null && cause.getCause() != cause && depth < 8; depth++) {
+                cause = cause.getCause();
+                detail.append(" <- ").append(cause.getClass().getSimpleName()).append(": ").append(cause.getMessage());
+            }
+            var failure = new TranserverException("Transerver pump failed [" + name + "]: "
+                    + detail, exception);
+            if (previous == null) return failure;
+            previous.addSuppressed(failure);
+            return previous;
         }
     }
 

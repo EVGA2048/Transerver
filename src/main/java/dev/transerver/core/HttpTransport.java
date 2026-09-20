@@ -12,6 +12,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.Set;
+import java.util.LinkedHashSet;
 
 public final class HttpTransport implements Transport {
     static final String NODE_HEADER = "X-Transerver-Node";
@@ -39,6 +41,20 @@ public final class HttpTransport implements Transport {
         this.authenticator = authenticator;
         this.client = client;
         this.requestTimeout = requestTimeout;
+    }
+
+    @Override
+    public Set<String> knownNodes(String requestedNodeId) {
+        requireLocalNode(requestedNodeId);
+        byte[] response = request(nodeId, "GET", "/v1/nodes", new byte[0]);
+        Set<String> nodes = new LinkedHashSet<>();
+        for (String line : new String(response, StandardCharsets.UTF_8).split("\\n")) {
+            String value = line.trim();
+            if (!value.isEmpty()) {
+                nodes.add(value);
+            }
+        }
+        return Set.copyOf(nodes);
     }
 
     @Override

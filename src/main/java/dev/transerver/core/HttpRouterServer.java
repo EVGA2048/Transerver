@@ -33,6 +33,7 @@ public final class HttpRouterServer implements AutoCloseable {
         this.executor = Executors.newVirtualThreadPerTaskExecutor();
         server.setExecutor(executor);
         server.createContext("/v1/hello", this::handleHello);
+        server.createContext("/v1/nodes", this::handleNodes);
         server.createContext("/v1/messages", this::handleMessages);
         server.createContext("/v1/receipts", this::handleReceipts);
     }
@@ -62,6 +63,25 @@ public final class HttpRouterServer implements AutoCloseable {
             return;
         }
         respond(exchange, 200, bytes("transerver/1"));
+    }
+
+    private void handleNodes(HttpExchange exchange) throws IOException {
+        try {
+            if (!exchange.getRequestMethod().equals("GET")) {
+                respond(exchange, 405, bytes("Method not allowed"));
+                return;
+            }
+            var proof = authenticate(exchange, new byte[0]);
+            var nodes = new java.util.ArrayList<>(router.knownNodes(proof.nodeId()));
+            nodes.sort(String::compareTo);
+            respond(exchange, 200, bytes(String.join("\n", nodes)));
+        } catch (SecurityException exception) {
+            respond(exchange, 401, bytes(exception.getMessage()));
+        } catch (IllegalArgumentException exception) {
+            respond(exchange, 400, bytes(exception.getMessage()));
+        } catch (Exception exception) {
+            respond(exchange, 500, bytes("Router failure"));
+        }
     }
 
     private void handleMessages(HttpExchange exchange) throws IOException {

@@ -20,6 +20,7 @@ class TranserverServicesTest {
         if (installed != null) {
             TranserverServices.clear(installed);
         }
+        TranserverServices.clearIdentity(identity);
     }
 
     @Test
@@ -34,8 +35,17 @@ class TranserverServicesTest {
         assertEquals(installed, TranserverServices.api().orElseThrow());
         TranserverServices.clear(installed);
         assertTrue(TranserverServices.api().isEmpty());
+        assertEquals(identity, TranserverServices.identity().orElseThrow());
+        TranserverServices.clearIdentity(identity);
         assertTrue(TranserverServices.identity().isEmpty());
         installed = null;
+    }
+
+    @Test
+    void exposesIdentityWithoutTransportRuntime() {
+        TranserverServices.installIdentity(identity);
+        assertTrue(TranserverServices.api().isEmpty());
+        assertEquals(identity, TranserverServices.identity().orElseThrow());
     }
 
     @Test

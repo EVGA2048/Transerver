@@ -29,25 +29,37 @@ public final class TranserverServerLifecycle {
     private static final Logger LOG = LoggerFactory.getLogger(TranserverMod.MOD_ID);
     private static TranserverRuntime runtime;
     private static TranserverApi api;
+    private static NodeIdentity identity;
 
     @SubscribeEvent
     public static synchronized void started(ServerStartedEvent event) {
+        if (identity != null) {
+            return;
+        }
+        try {
+            Path root = FMLPaths.GAMEDIR.get().resolve("transerver").toAbsolutePath().normalize();
+            NodeIdentityFile identityFile = new NodeIdentityFile(root.resolve("node-identity.properties"));
+            identity = identityFile.loadOrCreate(TranserverNeoForgeConfig.NODE_ALIAS.get());
+            if (!identity.alias().equals(TranserverNeoForgeConfig.NODE_ALIAS.get().trim())) {
+                identity = identityFile.rename(TranserverNeoForgeConfig.NODE_ALIAS.get());
+            }
+            TranserverServices.installIdentity(identity);
+        } catch (Exception exception) {
+            identity = null;
+            LOG.error("Transerver node identity could not be loaded", exception);
+            return;
+        }
+
         if (!TranserverNeoForgeConfig.ENABLED.get()) {
-            LOG.info("Transerver node is disabled");
+            LOG.info("Transerver transport is disabled; node identity remains available: {} ({})",
+                    identity.alias(), identity.fingerprint());
             return;
         }
-        if (runtime != null) {
-            return;
-        }
+
         try {
             byte[] secret = validateSecret(TranserverNeoForgeConfig.NETWORK_SECRET.get());
             URI router = validateRouter(TranserverNeoForgeConfig.ROUTER_URL.get());
             Path root = FMLPaths.GAMEDIR.get().resolve("transerver").toAbsolutePath().normalize();
-            NodeIdentityFile identityFile = new NodeIdentityFile(root.resolve("node-identity.properties"));
-            NodeIdentity identity = identityFile.loadOrCreate(TranserverNeoForgeConfig.NODE_ALIAS.get());
-            if (!identity.alias().equals(TranserverNeoForgeConfig.NODE_ALIAS.get().trim())) {
-                identity = identityFile.rename(TranserverNeoForgeConfig.NODE_ALIAS.get());
-            }
             String nodeId = identity.nodeId().toString();
             RouteResolver routes = ignored -> Optional.of(router);
             var node = new TranserverNode(nodeId,
@@ -69,6 +81,8 @@ public final class TranserverServerLifecycle {
     @SubscribeEvent
     public static synchronized void stopping(ServerStoppingEvent event) {
         stopRuntime();
+        TranserverServices.clearIdentity(identity);
+        identity = null;
     }
 
     private static void stopRuntime() {

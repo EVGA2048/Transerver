@@ -22,6 +22,43 @@ class TranserverNodeIntegrationTest {
     Path temporaryDirectory;
 
     @Test
+    void unknownLateReceiptFromOlderStoreIsQuarantinedAndDoesNotDropTransport() throws Exception {
+        var router = router("alpha", "beta");
+        var alpha = node("alpha", router);
+        var receipt = new FinalReceipt(java.util.UUID.randomUUID(), "alpha", "beta",
+                DeliveryState.APPLIED, "", java.time.Instant.now());
+        router.submitReceipt(receipt);
+        assertTrue(alpha.pumpSafely());
+        assertTrue(alpha.status().transportUp());
+        assertEquals(0, router.receiveReceipts("alpha", 10).size());
+        try (var files = java.nio.file.Files.list(temporaryDirectory.resolve("alpha/receipt-quarantine"))) {
+            assertEquals(1, files.count());
+        }
+    }
+
+    @Test
+    void conflictingLateReceiptIsQuarantinedWithoutChangingAcknowledgedResult() throws Exception {
+        var router = router("alpha", "beta");
+        var alpha = node("alpha", router);
+        var beta = node("beta", router);
+        beta.registerHandler("test:parcel", message -> CompletableFuture.completedFuture(DeliveryResult.APPLIED));
+        var sent = alpha.send("beta", "test:parcel", bytes("one"), SendOptions.defaults());
+        alpha.pump();
+        beta.pump();
+        alpha.pump();
+        alpha.acknowledgeCompletedSend(sent.messageId());
+        router.submitReceipt(new FinalReceipt(sent.messageId(), "alpha", "beta", DeliveryState.REJECTED,
+                "conflict", java.time.Instant.now()));
+        assertTrue(alpha.pumpSafely());
+        assertTrue(alpha.status().transportUp());
+        assertEquals(0, alpha.status().completedSendDepth());
+        assertEquals(0, router.receiveReceipts("alpha", 10).size());
+        try (var files = java.nio.file.Files.list(temporaryDirectory.resolve("alpha/receipt-quarantine"))) {
+            assertEquals(1, files.count());
+        }
+    }
+
+    @Test
     void routesIndependentlyBetweenThreeServers() throws Exception {
         var router = router("alpha", "beta", "gamma");
         var alpha = node("alpha", router);
@@ -151,6 +188,69 @@ class TranserverNodeIntegrationTest {
         assertEquals("recoverable", text(result.payload()));
         restartedAlpha.acknowledgeCompletedSend(result.messageId());
         assertTrue(restartedAlpha.completedSends(10).isEmpty());
+    }
+
+    @Test
+    void retryStaysQueuedAndAppliesExactlyOnceAfterDestinationRecovers() throws Exception {
+        var router = router("alpha", "beta");
+        var alpha = node("alpha", router);
+        var beta = node("beta", router);
+        var attempts = new AtomicInteger();
+        beta.registerHandler("test:package", message -> CompletableFuture.completedFuture(
+                attempts.incrementAndGet() == 1 ? DeliveryResult.RETRY : DeliveryResult.APPLIED));
+        var send = alpha.send("beta", "test:package", bytes("blocked-then-ready"), SendOptions.defaults());
+
+        alpha.pump();
+        beta.pump();
+        alpha.pump();
+
+        assertEquals(1, attempts.get());
+        assertEquals(1, alpha.pendingOutboxCount());
+        assertFalse(send.completion().toCompletableFuture().isDone());
+
+        beta.pump();
+        alpha.pump();
+
+        assertEquals(2, attempts.get());
+        assertEquals(0, alpha.pendingOutboxCount());
+        assertEquals(DeliveryState.APPLIED, send.completion().toCompletableFuture().join().state());
+
+        beta.pump();
+        alpha.pump();
+        assertEquals(2, attempts.get());
+    }
+
+    @Test
+    void offlineDestinationSurvivesSenderRestartAndAppliesOnceWhenItReturns() throws Exception {
+        var router = router("alpha", "beta");
+        var alpha = node("alpha", router);
+        var send = alpha.send("beta", "test:package", bytes("wait-for-beta"), SendOptions.defaults());
+
+        alpha.pump();
+        assertEquals(1, alpha.pendingOutboxCount());
+        assertFalse(send.completion().toCompletableFuture().isDone());
+
+        var restartedAlpha = node("alpha", router);
+        restartedAlpha.pump();
+        assertEquals(1, restartedAlpha.pendingOutboxCount());
+
+        var applications = new AtomicInteger();
+        var beta = node("beta", router);
+        beta.registerHandler("test:package", message -> {
+            applications.incrementAndGet();
+            return CompletableFuture.completedFuture(DeliveryResult.APPLIED);
+        });
+        beta.pump();
+        restartedAlpha.pump();
+
+        assertEquals(1, applications.get());
+        assertEquals(0, restartedAlpha.pendingOutboxCount());
+        assertEquals(1, restartedAlpha.completedSends(10).size());
+        assertEquals(DeliveryState.APPLIED, restartedAlpha.completedSends(10).getFirst().state());
+
+        beta.pump();
+        restartedAlpha.pump();
+        assertEquals(1, applications.get());
     }
 
     private InMemoryRouterTransport router(String... nodeIds) {

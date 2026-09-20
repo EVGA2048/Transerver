@@ -60,6 +60,39 @@ class HttpTransportIntegrationTest {
         }
     }
 
+    @Test
+    void lateReceiptAfterApplicationAcknowledgementDoesNotDisconnectSender() throws Exception {
+        var router = new FileRouterTransport(new FileMessageStore(temporaryDirectory.resolve("router")),
+                Set.of("alpha", "beta"));
+        try (var server = new HttpRouterServer(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0),
+                router, new HmacAuthenticator(SECRET))) {
+            server.start();
+            RouteResolver routes = ignored -> java.util.Optional.of(server.baseUri());
+            var alpha = node("alpha", routes);
+            var beta = node("beta", routes);
+            var calls = new java.util.concurrent.atomic.AtomicInteger();
+            beta.registerHandler("test:parcel", message -> {
+                calls.incrementAndGet();
+                return CompletableFuture.completedFuture(DeliveryResult.APPLIED);
+            });
+            var sent = alpha.send("beta", "test:parcel", bytes("one parcel"), SendOptions.defaults());
+            alpha.pump();
+            beta.pump();
+            // Sender retries its outbox before receiving the first final receipt.
+            alpha.pump();
+            alpha.acknowledgeCompletedSend(sent.messageId());
+            // The destination deduplicates the retry but replays its durable receipt.
+            beta.pump();
+            var restarted = node("alpha", routes);
+            restarted.pump();
+            assertEquals(1, calls.get());
+            assertEquals(0, restarted.pendingOutboxCount());
+            assertEquals(0, restarted.status().completedSendDepth());
+            org.junit.jupiter.api.Assertions.assertTrue(restarted.status().transportUp());
+            assertEquals(0, router.receiveReceipts("alpha", 10).size());
+        }
+    }
+
     private TranserverNode node(String nodeId, RouteResolver routes) throws Exception {
         var transport = new HttpTransport(nodeId, routes, new HmacAuthenticator(SECRET));
         return new TranserverNode(nodeId, transport,
